@@ -109,7 +109,6 @@ functions:
     llm: nemotron_ultra_llm
     max_turns: 3
     log_response_max_chars: 2000
-    verbose: true
 
   shallow_research_agent:
     _type: shallow_research_agent
