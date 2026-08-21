@@ -36,8 +36,10 @@ def test_config_inherits_registry_tools_and_rejects_unknown_fields():
     assert config.recursion_limit == 64
     assert config.interaction_mode == "interactive"
     assert config.response_mode == "standard"
+    assert config.visualization_mode == "none"
     assert config.gsf_catalog_call_limit is None
     assert config.gsf_text_to_sql_call_limit is None
+    assert config.gsf_text_to_pql_call_limit is None
     assert config.gsf_cache_repeated_calls is True
     assert config.python_call_limit is None
     assert config.finalization_model_call_limit is None
@@ -47,6 +49,8 @@ def test_config_inherits_registry_tools_and_rejects_unknown_fields():
         data_science_register.DataScienceAgentConfig(llm="model", interaction_mode="batch")
     with pytest.raises(ValueError, match="response_mode"):
         data_science_register.DataScienceAgentConfig(llm="model", response_mode="brief")
+    with pytest.raises(ValueError, match="visualization_mode"):
+        data_science_register.DataScienceAgentConfig(llm="model", visualization_mode="png")
 
 
 @pytest.mark.asyncio
@@ -95,8 +99,10 @@ async def test_registration_passes_headless_mode_to_agent():
         llm="model",
         interaction_mode="headless",
         response_mode="fdabench_choice",
+        visualization_mode="native",
         gsf_catalog_call_limit=2,
         gsf_text_to_sql_call_limit=6,
+        gsf_text_to_pql_call_limit=2,
         python_call_limit=7,
         finalization_model_call_limit=28,
     )
@@ -111,8 +117,10 @@ async def test_registration_passes_headless_mode_to_agent():
         assert function_info is not None
         assert agent_cls.call_args.kwargs["interaction_mode"] == "headless"
         assert agent_cls.call_args.kwargs["response_mode"] == "fdabench_choice"
+        assert agent_cls.call_args.kwargs["visualization_mode"] == "native"
         assert agent_cls.call_args.kwargs["gsf_catalog_call_limit"] == 2
         assert agent_cls.call_args.kwargs["gsf_text_to_sql_call_limit"] == 6
+        assert agent_cls.call_args.kwargs["gsf_text_to_pql_call_limit"] == 2
         assert agent_cls.call_args.kwargs["python_call_limit"] == 7
         assert agent_cls.call_args.kwargs["finalization_model_call_limit"] == 28
     finally:

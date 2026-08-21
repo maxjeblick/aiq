@@ -7,5 +7,12 @@ from .state import DataScienceAgentContext
 from .state import DataScienceAgentState
 from .state import InteractionMode
 from .state import ResponseMode
+from .state import VisualizationMode
 
-__all__ = ["DataScienceAgentContext", "DataScienceAgentState", "InteractionMode", "ResponseMode"]
+__all__ = [
+    "DataScienceAgentContext",
+    "DataScienceAgentState",
+    "InteractionMode",
+    "ResponseMode",
+    "VisualizationMode",
+]

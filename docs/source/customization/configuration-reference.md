@@ -487,8 +487,10 @@ functions:
     llm: data_science_llm
     # tools omitted -> inherit every tool in data_source_registry
     response_mode: standard
+    visualization_mode: native
     gsf_catalog_call_limit: 2
     gsf_text_to_sql_call_limit: 6
+    gsf_text_to_pql_call_limit: 2
     python_call_limit: 8
     finalization_model_call_limit: 18
     recursion_limit: 64
@@ -502,8 +504,10 @@ functions:
 | `exclude_tools` | `list[str]` | `[]` | Exact runtime tool names removed after inherited or explicit tools are resolved. |
 | `interaction_mode` | `interactive` or `headless` | `interactive` | In `headless` mode, never wait for clarification; resolve supported assumptions and perform one bounded synthesis retry if needed. |
 | `response_mode` | `standard` or `fdabench_choice` | `standard` | In `fdabench_choice` mode, preserve explicitly supplied option labels and emit an `Answer:` marker; non-choice requests retain normal report behavior. |
+| `visualization_mode` | `none` or `native` | `none` | In `native` mode, instruct the agent to emit schema-valid `chart` and `chart-carousel` JSON blocks for the web UI. `none` preserves plain Markdown behavior for CLI and evaluation profiles. |
 | `gsf_catalog_call_limit` | `int` or `None` | `None` | Optional request-local hard limit on actual GSF catalog calls. Minimum `1`; exact cache hits do not count. |
 | `gsf_text_to_sql_call_limit` | `int` or `None` | `None` | Optional request-local hard limit on actual GSF text-to-SQL calls. Minimum `1`; exact cache hits do not count. |
+| `gsf_text_to_pql_call_limit` | `int` or `None` | `None` | Optional request-local hard limit on actual GSF text-to-PQL prediction calls. Minimum `1`; exact cache hits do not count. |
 | `gsf_cache_repeated_calls` | `bool` | `true` | Reuse exact repeated GSF tool calls within one agent request. Cache state never crosses requests. |
 | `python_call_limit` | `int` or `None` | `None` | Optional request-local call ceiling for the persistent scientific Python kernel. |
 | `finalization_model_call_limit` | `int` or `None` | derived | Model-call count at which tools are disabled and a no-tool synthesis turn is forced before recursion exhaustion. |

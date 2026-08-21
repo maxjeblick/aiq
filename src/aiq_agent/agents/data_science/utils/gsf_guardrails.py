@@ -20,7 +20,8 @@ from .analysis_runtime import register_gsf_result
 
 _CATALOG_TOOL = "gsf__catalog_search"
 _SQL_TOOL = "gsf__text_to_sql"
-_GSF_TOOLS = frozenset({_CATALOG_TOOL, _SQL_TOOL})
+_PQL_TOOL = "gsf__text_to_pql"
+_GSF_TOOLS = frozenset({_CATALOG_TOOL, _SQL_TOOL, _PQL_TOOL})
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +30,7 @@ class GSFCallBudget:
 
     catalog_calls: int | None = None
     text_to_sql_calls: int | None = None
+    text_to_pql_calls: int | None = None
     cache_repeated_calls: bool = True
 
 
@@ -48,7 +50,7 @@ class GSFCallRecord:
 @dataclass(slots=True)
 class _GSFRunState:
     budget: GSFCallBudget
-    counts: dict[str, int] = field(default_factory=lambda: {_CATALOG_TOOL: 0, _SQL_TOOL: 0})
+    counts: dict[str, int] = field(default_factory=lambda: {_CATALOG_TOOL: 0, _SQL_TOOL: 0, _PQL_TOOL: 0})
     cache: dict[str, ToolMessage] = field(default_factory=dict)
     records: list[GSFCallRecord] = field(default_factory=list)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -72,6 +74,7 @@ def summarize_gsf_run() -> dict[str, Any]:
     return {
         "catalog_calls": state.counts[_CATALOG_TOOL],
         "text_to_sql_calls": state.counts[_SQL_TOOL],
+        "text_to_pql_calls": state.counts[_PQL_TOOL],
         "cache_hits": sum(record.cached for record in state.records),
         "records": [
             {
@@ -107,6 +110,8 @@ def _limit_for(tool_name: str, budget: GSFCallBudget) -> int | None:
         return budget.catalog_calls
     if tool_name == _SQL_TOOL:
         return budget.text_to_sql_calls
+    if tool_name == _PQL_TOOL:
+        return budget.text_to_pql_calls
     return None
 
 
@@ -140,8 +145,8 @@ def _record_from_message(tool_name: str, message: ToolMessage, *, cached: bool) 
     )
 
 
-def _register_sql_evidence(tool_call: dict[str, Any], message: ToolMessage) -> ToolMessage:
-    """Persist exact SQL rows for Python and annotate the model-facing receipt."""
+def _register_tabular_evidence(tool_call: dict[str, Any], message: ToolMessage) -> ToolMessage:
+    """Persist exact SQL or prediction rows for Python and annotate the model-facing result."""
 
     try:
         payload = json.loads(str(message.content or ""))
@@ -217,8 +222,8 @@ class GSFCallGuardMiddleware(AgentMiddleware):
             run_state.counts[tool_name] += 1
             result = await handler(request)
             if isinstance(result, ToolMessage):
-                if tool_name == _SQL_TOOL:
-                    result = _register_sql_evidence(tool_call, result)
+                if tool_name in {_SQL_TOOL, _PQL_TOOL}:
+                    result = _register_tabular_evidence(tool_call, result)
                 record = _record_from_message(tool_name, result, cached=False)
                 run_state.records.append(record)
                 if run_state.budget.cache_repeated_calls and record.status != "error":

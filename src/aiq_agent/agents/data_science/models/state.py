@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 InteractionMode = Literal["interactive", "headless"]
 ResponseMode = Literal["standard", "fdabench_choice"]
+VisualizationMode = Literal["none", "native"]
 
 
 class DataScienceAgentState(BaseModel):

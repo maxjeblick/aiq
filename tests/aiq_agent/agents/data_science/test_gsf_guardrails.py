@@ -99,6 +99,7 @@ async def test_non_gsf_tool_passes_through_without_accounting() -> None:
     assert result is expected
     assert summary["catalog_calls"] == 0
     assert summary["text_to_sql_calls"] == 0
+    assert summary["text_to_pql_calls"] == 0
 
 
 @pytest.mark.asyncio
@@ -160,4 +161,42 @@ async def test_successful_sql_result_gets_stable_python_reference() -> None:
     assert payload["analysis_ref"] == "gsf_1"
     assert "gsf_rows('gsf_1')" in payload["analysis_hint"]
     assert manifest["results"][0]["ref"] == "gsf_1"
+    assert manifest["results"][0]["row_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_prediction_result_is_cached_bounded_and_registered_for_analysis() -> None:
+    middleware = GSFCallGuardMiddleware(GSFCallBudget(text_to_pql_calls=1))
+    handler = AsyncMock(
+        return_value=ToolMessage(
+            content='{"request_id":"p1","pql":"PREDICT churn","rows":[{"customer":"c1","score":0.8}]}',
+            tool_call_id="call-1",
+            name="gsf__text_to_pql",
+        )
+    )
+    args = {"question": "Predict churn", "database_name": "db"}
+    analysis_token = begin_analysis_run()
+    gsf_token = begin_gsf_run(middleware.budget)
+    try:
+        first = await middleware.awrap_tool_call(_request("gsf__text_to_pql", "call-1", args), handler)
+        cached = await middleware.awrap_tool_call(_request("gsf__text_to_pql", "call-2", args), handler)
+        blocked = await middleware.awrap_tool_call(
+            _request("gsf__text_to_pql", "call-3", {"question": "Predict demand", "database_name": "db"}),
+            handler,
+        )
+        summary = summarize_gsf_run()
+        payload = json.loads(str(first.content))
+        analysis_state = get_analysis_run()
+        assert analysis_state is not None
+        manifest = json.loads(analysis_state.manifest_path.read_text(encoding="utf-8"))
+    finally:
+        end_gsf_run(gsf_token)
+        await end_analysis_run(analysis_token)
+
+    assert handler.await_count == 1
+    assert cached.tool_call_id == "call-2"
+    assert blocked.status == "error"
+    assert summary["text_to_pql_calls"] == 1
+    assert summary["cache_hits"] == 1
+    assert payload["analysis_ref"] == "gsf_1"
     assert manifest["results"][0]["row_count"] == 1

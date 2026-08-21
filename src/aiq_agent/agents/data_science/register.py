@@ -33,6 +33,7 @@ from nat.data_models.function import FunctionBaseConfig
 
 from .agent import DataScienceAgent
 from .models import DataScienceAgentState
+from .models import VisualizationMode
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,10 @@ class DataScienceAgentConfig(FunctionBaseConfig, name="data_science_agent"):
         default="standard",
         description="Optional response contract; FDABench choice mode preserves labels when choices are present.",
     )
+    visualization_mode: VisualizationMode = Field(
+        default="none",
+        description="Optional native chart contract for UI-rendered analytical answers.",
+    )
     gsf_catalog_call_limit: int | None = Field(
         default=None,
         ge=1,
@@ -73,6 +78,11 @@ class DataScienceAgentConfig(FunctionBaseConfig, name="data_science_agent"):
         default=None,
         ge=1,
         description="Optional request-local hard limit for actual GSF text-to-SQL calls.",
+    )
+    gsf_text_to_pql_call_limit: int | None = Field(
+        default=None,
+        ge=1,
+        description="Optional request-local hard limit for actual GSF text-to-PQL prediction calls.",
     )
     gsf_cache_repeated_calls: bool = Field(
         default=True,
@@ -125,8 +135,10 @@ async def data_science_agent(config: DataScienceAgentConfig, builder: Builder):
         callbacks=callbacks,
         interaction_mode=config.interaction_mode,
         response_mode=config.response_mode,
+        visualization_mode=config.visualization_mode,
         gsf_catalog_call_limit=config.gsf_catalog_call_limit,
         gsf_text_to_sql_call_limit=config.gsf_text_to_sql_call_limit,
+        gsf_text_to_pql_call_limit=config.gsf_text_to_pql_call_limit,
         gsf_cache_repeated_calls=config.gsf_cache_repeated_calls,
         python_call_limit=config.python_call_limit,
         finalization_model_call_limit=config.finalization_model_call_limit,
@@ -148,8 +160,10 @@ async def data_science_agent(config: DataScienceAgentConfig, builder: Builder):
                 callbacks=callbacks,
                 interaction_mode=config.interaction_mode,
                 response_mode=config.response_mode,
+                visualization_mode=config.visualization_mode,
                 gsf_catalog_call_limit=config.gsf_catalog_call_limit,
                 gsf_text_to_sql_call_limit=config.gsf_text_to_sql_call_limit,
+                gsf_text_to_pql_call_limit=config.gsf_text_to_pql_call_limit,
                 gsf_cache_repeated_calls=config.gsf_cache_repeated_calls,
                 python_call_limit=config.python_call_limit,
                 finalization_model_call_limit=config.finalization_model_call_limit,

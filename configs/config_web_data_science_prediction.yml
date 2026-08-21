@@ -1,0 +1,105 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Local browser profile for the Data Science Agent with GSF/Kumo predictions.
+# Required locally: NVIDIA_INFERENCE_API_KEY, TAVILY_API_KEY, GSF_BASE_URL,
+# GSF_EMAIL, and GSF_PASSWORD. KUMO_RFM_API_URL is configured on the remote GSF
+# service, not in this AI-Q process.
+
+general:
+  use_uvloop: true
+  telemetry:
+    logging:
+      console:
+        _type: console
+        level: INFO
+  front_end:
+    _type: aiq_api
+    runner_class: aiq_api.plugin.AIQAPIWorker
+    db_url: ${NAT_JOB_STORE_DB_URL:-sqlite+aiosqlite:///./jobs-prediction.db}
+    expiry_seconds: 86400
+    cors:
+      allow_origin_regex: 'http://localhost(:\d+)?|http://127.0.0.1(:\d+)?'
+      allow_methods:
+        - GET
+        - POST
+        - DELETE
+        - OPTIONS
+      allow_headers:
+        - "*"
+      allow_credentials: true
+      expose_headers:
+        - "*"
+
+llms:
+  data_science_llm:
+    _type: openai
+    model_name: ${AIQ_DATA_SCIENCE_MODEL:-nvidia/zai-org/glm-5.1}
+    base_url: ${AIQ_INFERENCE_BASE_URL:-https://inference-api.nvidia.com/v1}
+    api_key: ${NVIDIA_INFERENCE_API_KEY}
+    temperature: 0.2
+    max_tokens: 32768
+    num_retries: 2
+    request_timeout: 600
+    parallel_tool_calls: false
+
+function_groups:
+  gsf:
+    _type: gsf
+    base_url: ${GSF_BASE_URL}
+    auth:
+      mode: password
+      email: ${GSF_EMAIL}
+      password: GSF_PASSWORD  # pragma: allowlist secret
+    include:
+      - catalog_search
+      - text_to_sql
+      - text_to_pql
+    connect_timeout_seconds: 10
+    read_timeout_seconds: ${GSF_READ_TIMEOUT_SECONDS:-600}
+    completion_wall_timeout_seconds: ${GSF_COMPLETION_WALL_TIMEOUT_SECONDS:-600}
+    max_retries: 2
+    max_completion_retries: 1
+    default_max_rows: 1000
+
+functions:
+  data_sources:
+    _type: data_source_registry
+    sources:
+      - id: structured_data
+        name: "Enterprise Data and Predictions"
+        description: >-
+          Query historical enterprise data through SQL and forecast future
+          outcomes through GSF's Kumo/PQL prediction path.
+        default_enabled: true
+        tools:
+          - gsf
+      - id: web_search
+        name: "Web Search"
+        description: "Search for current external context relevant to the forecast."
+        default_enabled: true
+        tools:
+          - web_search_tool
+
+  web_search_tool:
+    _type: tavily_web_search
+    max_results: 5
+    advanced_search: true
+    max_content_length: 2000
+
+  data_science_agent:
+    _type: data_science_agent
+    llm: data_science_llm
+    interaction_mode: interactive
+    response_mode: standard
+    visualization_mode: native
+    recursion_limit: 64
+    gsf_catalog_call_limit: 2
+    gsf_text_to_sql_call_limit: 4
+    gsf_text_to_pql_call_limit: 2
+    gsf_cache_repeated_calls: true
+    finalization_model_call_limit: 28
+    verbose: true
+
+workflow:
+  _type: data_science_workflow

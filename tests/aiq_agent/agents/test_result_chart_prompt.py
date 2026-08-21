@@ -20,9 +20,9 @@ prompt stays short and both delivery modes are driven by the skill. The shallow
 researcher keeps its own inline copy because the shallow path has no skill runtime.
 
 These tests ensure the worked examples in every source that still documents the
-contract (the shallow prompt and the chart skill) stay valid JSON that matches the
-UI ResultChart zod schema, and that the writer prompt now delegates to the skill
-instead of embedding the contract.
+contract (the shallow and data-science prompts plus the chart skill) stay valid
+JSON that matches the UI ResultChart zod schema, and that the writer prompt now
+delegates to the skill instead of embedding the contract.
 """
 
 import json
@@ -37,11 +37,11 @@ _AGENTS = Path(__file__).resolve().parents[3] / "src" / "aiq_agent" / "agents"
 _WRITER = _AGENTS / "deep_researcher" / "prompts" / "writer.j2"
 _CHART_SKILL = _AGENTS / "deep_researcher" / "skills" / "visualization" / "chart-generation" / "SKILL.md"
 
-# The inline ``chart`` contract now lives in exactly these two places: the shallow
-# researcher prompt (no skill runtime) and the chart-generation skill (both the
-# deep researcher and writer read it on demand).
+# Agents without the deep-research skill runtime keep the inline chart contract
+# in their prompts. Deep research and its writer read the shared skill on demand.
 _CONTRACT_SOURCES = {
     "shallow": _AGENTS / "shallow_researcher" / "prompts" / "researcher.j2",
+    "data_science": _AGENTS / "data_science" / "prompts" / "agent.j2",
     "skill": _CHART_SKILL,
 }
 

@@ -27,6 +27,9 @@ The agent receives tools through NeMo Agent Toolkit references and the
 - `gsf__catalog_search` discovers query-relevant ontology candidates and entity
   coverage.
 - `gsf__text_to_sql` generates validated SQL and returns bounded rows from GSF.
+- `gsf__text_to_pql` sends forecast and future-outcome questions through GSF's
+  Kumo/PQL prediction branch and returns generated PQL, bounded prediction rows,
+  and available diagnostics.
 - `knowledge_search` uses the configured AI-Q knowledge backend.
 - `web_search_tool` uses the configured AI-Q web-search provider.
 - `python`, when configured through `stateful_python`, provides one persistent
@@ -45,10 +48,12 @@ graph TD
     B --> C{What evidence is needed?}
     C -->|Enterprise semantics| D[GSF catalog search]
     C -->|Structured values| E[GSF text-to-SQL]
+    C -->|Future outcomes| P[GSF text-to-PQL]
     C -->|Ingested documents| F[AI-Q knowledge search]
     C -->|Current public evidence| G[AI-Q web search]
     D --> B
     E --> B
+    P --> B
     F --> B
     G --> B
     B --> H[Grounded analysis and synthesis]
@@ -59,19 +64,20 @@ values observed earlier. Document and web searches should be narrow enough to
 represent distinct evidence needs. The final answer goes through AI-Q's source
 registry, citation verification, and report sanitization.
 
-The optional request-local GSF guard enforces configured catalog and
-text-to-SQL call limits, serializes calls, caches exact repeats, and records
+The optional request-local GSF guard enforces configured catalog, text-to-SQL,
+and text-to-PQL call limits, serializes calls, caches exact repeats, and records
 compact evidence diagnostics (coverage/candidate counts or row counts and
 truncation). The agent prompt complements that boundary with an evidence ledger,
-one broad catalog-discovery pass, consolidated analytical requests, and bounded
-repair rules. Limits are opt-in so the general direct profile remains tunable.
+one broad catalog-discovery pass, consolidated analytical or predictive
+requests, and bounded repair rules. Limits are opt-in so the general direct
+profile remains tunable.
 
 For analyses that require pandas, NumPy, SciPy, scikit-learn, or statsmodels,
 the `stateful_python` NAT function keeps a real Python subprocess alive for the
 entire DS request. The runtime creates and closes the process; the model sees a
 single `python(code)` tool and does not manage workspace identifiers. Every
-successful GSF text-to-SQL response is persisted under a stable request-local
-reference (`gsf_1`, `gsf_2`, and so on). The kernel exposes
+successful GSF text-to-SQL or text-to-PQL response containing rows is persisted
+under a stable request-local reference (`gsf_1`, `gsf_2`, and so on). The kernel exposes
 `list_gsf_results()`, `gsf_result(ref)`, `gsf_rows(ref)`, `gsf_sql(ref)`, and
 `gsf_latest()`, so analysis consumes exact rows rather than copying values from
 the conversation. The kernel has no configured source-database or GSF client;
@@ -112,6 +118,63 @@ retrieval. Its ingestion URL is intentionally fail-closed because this profile
 only searches an existing collection. TLS verification remains enabled by
 default; trusted test routes using a self-signed chain can set
 `RAG_VERIFY_SSL=false` locally.
+
+## Predictive browser run
+
+`configs/config_web_data_science_prediction.yml` exposes the direct Data Science
+Agent through the local browser UI and enables `catalog_search`, `text_to_sql`,
+and `text_to_pql`. It requires `NVIDIA_INFERENCE_API_KEY`, `TAVILY_API_KEY`,
+`GSF_BASE_URL`, `GSF_EMAIL`, and `GSF_PASSWORD` in the process environment.
+
+Start the backend and UI together:
+
+```bash
+./scripts/start_e2e.sh \
+  --config_file configs/config_web_data_science_prediction.yml
+```
+
+The UI is available at `http://localhost:3000` and the backend at
+`http://localhost:8000`. Kumo is executed by GSF: the remote GSF deployment must
+have `KUMO_RFM_API_URL` configured and a predictive graph available for the
+question's data. Setting `KUMO_RFM_API_URL` only in the AI-Q process does not
+enable a remote GSF server.
+
+For a forecast request, the prompt directs the agent to use text-to-PQL for the
+future estimate and text-to-SQL only for explicitly requested historical
+baselines or validation. A result without generated PQL is treated as a
+diagnostic failure rather than prediction evidence.
+
+This profile also sets `visualization_mode: native`. The final Markdown can
+therefore include fenced `chart` and `chart-carousel` JSON blocks, which the
+existing web UI renders as interactive SVG charts with accessible values and
+CSV export. No image files or artifact storage are involved. Other profiles
+default to `visualization_mode: none`, so benchmark and CLI output contracts do
+not change unless explicitly enabled.
+
+The chart contract keeps evidence types separate:
+
+- PQL prediction scores, probabilities, risks, or future-outcome estimates are
+  labeled as predicted and include their horizon.
+- SQL time series are labeled as observed historical data and retain their
+  actual grain, units, and as-of date.
+- Predicted and observed series share a chart only when population, grain, and
+  units align. Otherwise the report uses separate charts.
+- Charts contain exact tool-derived or calculated values only. They do not add
+  interpolated dates, projected points, or padded categories, and a report is
+  limited to three charts.
+
+An FDABench-style mixed-source prediction question for the `regional_sales`
+database is:
+
+> Using enterprise data through the latest available transaction date,
+> identify the five customers most likely to place at least one order in the
+> next 30 days. For each customer, report the Kumo prediction score. Then use
+> observed historical data to report order count and total spend over the
+> preceding 90 days, compare the predicted cohort's averages with all active
+> customers, and use current public indicators of regional consumer demand as
+> external context. Clearly separate predicted outputs from observed metrics,
+> state the forecast horizon and as-of date, and disclose PQL, SQL, uncertainty,
+> and material limitations.
 
 ## Product Hybrid integration
 
@@ -190,9 +253,9 @@ data, RAG documents, database files, endpoint URLs, or credentials.
 - The context-aware router provides the Hybrid dispatch hook, but shipped
   profiles must explicitly configure `data_science_hybrid_adapter` to select
   this agent.
-- The public GSF function group exposes `text_to_pql`, but the current DS Agent
-  profiles intentionally include only catalog search and text-to-SQL;
-  predictive routing remains outside this integration.
+- The dedicated predictive browser profile enables `text_to_pql`; the CLI and
+  FDABench profiles remain historical-analysis profiles and intentionally omit
+  it.
 - Atomic-question clarification is planned separately and is not part of the
   direct workflow.
 - The ReAct message/tool trajectory is observable through NAT tracing. Benchmark

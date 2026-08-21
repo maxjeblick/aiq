@@ -35,6 +35,7 @@ from .models import DataScienceAgentContext
 from .models import DataScienceAgentState
 from .models import InteractionMode
 from .models import ResponseMode
+from .models import VisualizationMode
 from .utils.analysis_runtime import begin_analysis_run
 from .utils.analysis_runtime import end_analysis_run
 from .utils.analysis_runtime import get_analysis_run
@@ -113,8 +114,10 @@ class DataScienceAgent:
         middleware: Sequence[AgentMiddleware] = (),
         interaction_mode: InteractionMode = "interactive",
         response_mode: ResponseMode = "standard",
+        visualization_mode: VisualizationMode = "none",
         gsf_catalog_call_limit: int | None = None,
         gsf_text_to_sql_call_limit: int | None = None,
+        gsf_text_to_pql_call_limit: int | None = None,
         gsf_cache_repeated_calls: bool = True,
         python_call_limit: int | None = None,
         finalization_model_call_limit: int | None = None,
@@ -132,10 +135,13 @@ class DataScienceAgent:
             raise ValueError(f"unsupported data-science interaction mode: {interaction_mode}")
         if response_mode not in {"standard", "fdabench_choice"}:
             raise ValueError(f"unsupported data-science response mode: {response_mode}")
+        if visualization_mode not in {"none", "native"}:
+            raise ValueError(f"unsupported data-science visualization mode: {visualization_mode}")
 
         gsf_budget = GSFCallBudget(
             catalog_calls=gsf_catalog_call_limit,
             text_to_sql_calls=gsf_text_to_sql_call_limit,
+            text_to_pql_calls=gsf_text_to_pql_call_limit,
             cache_repeated_calls=gsf_cache_repeated_calls,
         )
 
@@ -145,12 +151,19 @@ class DataScienceAgent:
             agent_tools,
             interaction_mode=interaction_mode,
             response_mode=response_mode,
+            visualization_mode=visualization_mode,
             gsf_catalog_call_limit=gsf_catalog_call_limit,
             gsf_text_to_sql_call_limit=gsf_text_to_sql_call_limit,
+            gsf_text_to_pql_call_limit=gsf_text_to_pql_call_limit,
             python_call_limit=python_call_limit,
         )
         agent_middleware = [prompt_middleware]
-        if gsf_catalog_call_limit is not None or gsf_text_to_sql_call_limit is not None or gsf_cache_repeated_calls:
+        if (
+            gsf_catalog_call_limit is not None
+            or gsf_text_to_sql_call_limit is not None
+            or gsf_text_to_pql_call_limit is not None
+            or gsf_cache_repeated_calls
+        ):
             agent_middleware.append(GSFCallGuardMiddleware(gsf_budget))
         if python_call_limit is not None and "python" in tool_name_counts:
             agent_middleware.append(
@@ -175,6 +188,7 @@ class DataScienceAgent:
         self.callbacks = tuple(callbacks)
         self.interaction_mode = interaction_mode
         self.response_mode = response_mode
+        self.visualization_mode = visualization_mode
         self.gsf_budget = gsf_budget
         self.python_call_limit = python_call_limit
         self.finalization_model_call_limit = effective_finalization_limit
@@ -336,7 +350,12 @@ class DataScienceAgent:
                 )
         finally:
             summary = summarize_gsf_run()
-            if summary and (summary["catalog_calls"] or summary["text_to_sql_calls"] or summary["cache_hits"]):
+            if summary and (
+                summary["catalog_calls"]
+                or summary["text_to_sql_calls"]
+                or summary["text_to_pql_calls"]
+                or summary["cache_hits"]
+            ):
                 logger.info("Data-science GSF call summary: %s", summary)
             end_gsf_run(gsf_run_token)
             await end_analysis_run(analysis_run_token)

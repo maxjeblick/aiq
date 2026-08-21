@@ -110,6 +110,40 @@ async def test_run_invokes_one_graph_with_full_history_and_preserves_state(monke
     assert result.user_info == {"tenant": "acme"}
 
 
+@pytest.mark.asyncio
+async def test_run_preserves_native_chart_fence_through_report_finalization(monkeypatch):
+    original = [HumanMessage(content="Show monthly GPU usage")]
+    chart = (
+        '{"type":"line","title":"Monthly GPU usage","x":{"key":"month"},'
+        '"series":[{"key":"hours"}],"data":[{"month":"Jan","hours":40},{"month":"Feb","hours":52}]}'
+    )
+    full_history = [
+        *original,
+        ToolMessage(
+            content=(
+                '{"request_id":"gsf-chart","sql":"SELECT month, SUM(hours)",'
+                '"rows":[{"month":"Jan","hours":40},{"month":"Feb","hours":52}]}'
+            ),
+            name="gsf__text_to_sql",
+            tool_call_id="query-chart",
+        ),
+        AIMessage(
+            content=(
+                f"Usage increased in February [1].\n\n```chart\n{chart}\n```\n\n"
+                "## Sources\n- [1] gsf__text_to_sql request gsf-chart"
+            )
+        ),
+    ]
+    graph = MagicMock()
+    graph.ainvoke = AsyncMock(return_value={"messages": full_history})
+
+    result = await _agent(graph, monkeypatch).run(DataScienceAgentState(messages=original))
+
+    content = str(result.messages[-1].content)
+    assert f"```chart\n{chart}\n```" in content
+    assert "Usage increased in February [1]." in content
+
+
 @pytest.mark.parametrize(
     "messages",
     [[], [HumanMessage(content=" \n\t ")], [AIMessage(content="Assistant-only status")]],
@@ -284,7 +318,7 @@ def test_constructor_passes_exact_tools_and_injected_middleware(monkeypatch):
     graph = MagicMock()
     create_agent = MagicMock(return_value=graph)
     custom_middleware = MagicMock(spec=AgentMiddleware)
-    tools = [_tool("gsf__catalog_search"), _tool()]
+    tools = [_tool("gsf__catalog_search"), _tool(), _tool("gsf__text_to_pql")]
     monkeypatch.setattr(agent_module, "create_agent", create_agent)
 
     agent = DataScienceAgent(
@@ -292,6 +326,7 @@ def test_constructor_passes_exact_tools_and_injected_middleware(monkeypatch):
         tools=tools,
         recursion_limit=40,
         middleware=[custom_middleware],
+        visualization_mode="native",
     )
 
     call = create_agent.call_args
@@ -302,9 +337,10 @@ def test_constructor_passes_exact_tools_and_injected_middleware(monkeypatch):
     assert call.kwargs["context_schema"] is DataScienceAgentContext
     assert call.kwargs["name"] == "data_science_agent"
     assert agent.graph is graph
-    assert agent.source_tool_names == frozenset({"gsf__catalog_search", "gsf__text_to_sql"})
+    assert agent.source_tool_names == frozenset({"gsf__catalog_search", "gsf__text_to_sql", "gsf__text_to_pql"})
     assert agent.interaction_mode == "interactive"
     assert agent.response_mode == "standard"
+    assert agent.visualization_mode == "native"
 
 
 def test_constructor_requires_explicit_unique_tools(monkeypatch):
@@ -321,6 +357,8 @@ def test_constructor_requires_explicit_unique_tools(monkeypatch):
         DataScienceAgent(llm=MagicMock(), tools=[_tool()], interaction_mode="batch")
     with pytest.raises(ValueError, match="unsupported data-science response mode"):
         DataScienceAgent(llm=MagicMock(), tools=[_tool()], response_mode="brief")
+    with pytest.raises(ValueError, match="unsupported data-science visualization mode"):
+        DataScienceAgent(llm=MagicMock(), tools=[_tool()], visualization_mode="png")
 
     create_agent.assert_not_called()
 
@@ -330,10 +368,11 @@ def test_prompt_uses_public_aiq_tool_contracts():
 
     assert "`gsf__catalog_search`" in prompt
     assert "`gsf__text_to_sql`" in prompt
+    assert "`gsf__text_to_pql`" in prompt
     assert "knowledge-search tool" in prompt
     assert "web search" in prompt
     assert "gsf__query" not in prompt
-    assert "predictive" not in prompt
+    assert "prediction horizon" in prompt
     assert 'interaction_mode == "headless"' in prompt
     assert 'response_mode == "fdabench_choice"' in prompt
     assert "Never ask the user a follow-up question" in prompt
@@ -348,8 +387,10 @@ def test_prompt_renders_distinct_interaction_policies():
         "catalog_context": None,
         "catalog_request_id": None,
         "response_mode": "standard",
+        "visualization_mode": "none",
         "gsf_catalog_call_limit": None,
         "gsf_text_to_sql_call_limit": None,
+        "gsf_text_to_pql_call_limit": None,
         "python_call_limit": None,
         "current_datetime": "2026-08-11T12:00:00-03:00",
     }
@@ -363,6 +404,35 @@ def test_prompt_renders_distinct_interaction_policies():
     assert "ask one concise clarification question" not in headless
 
 
+def test_prompt_renders_native_chart_contract_only_when_enabled():
+    template = (agent_module.AGENT_DIR / "prompts" / "agent.j2").read_text()
+    common = {
+        "tools": [],
+        "user_info": None,
+        "database_name": None,
+        "catalog_context": None,
+        "catalog_request_id": None,
+        "interaction_mode": "interactive",
+        "response_mode": "standard",
+        "gsf_catalog_call_limit": None,
+        "gsf_text_to_sql_call_limit": None,
+        "gsf_text_to_pql_call_limit": None,
+        "python_call_limit": None,
+        "current_datetime": "2026-08-21T12:00:00-03:00",
+    }
+
+    disabled = render_prompt_template(template, visualization_mode="none", **common)
+    enabled = render_prompt_template(template, visualization_mode="native", **common)
+
+    assert "Native chart output:" not in disabled
+    assert "Native chart output:" in enabled
+    assert "chart PQL scores or probabilities as a ranking" in enabled
+    assert "Show observed and predicted" in enabled
+    assert "```chart" in enabled
+    assert "```chart-carousel" in enabled
+    assert "never emit base64" in enabled
+
+
 def test_prompt_renders_choice_contract_and_gsf_budget_guidance():
     template = (agent_module.AGENT_DIR / "prompts" / "agent.j2").read_text()
     rendered = render_prompt_template(
@@ -374,8 +444,10 @@ def test_prompt_renders_choice_contract_and_gsf_budget_guidance():
         catalog_request_id=None,
         interaction_mode="headless",
         response_mode="fdabench_choice",
+        visualization_mode="none",
         gsf_catalog_call_limit=2,
         gsf_text_to_sql_call_limit=6,
+        gsf_text_to_pql_call_limit=2,
         python_call_limit=None,
         current_datetime="2026-08-18T12:00:00-03:00",
     )
@@ -384,6 +456,7 @@ def test_prompt_renders_choice_contract_and_gsf_budget_guidance():
     assert "Answer: <label>" in rendered
     assert "at most 2 actual GSF catalog" in rendered
     assert "at most 6 actual GSF" in rendered
+    assert "text-to-PQL calls" in rendered
 
 
 def test_prompt_renders_persistent_python_and_gsf_receipt_guidance():
@@ -397,8 +470,10 @@ def test_prompt_renders_persistent_python_and_gsf_receipt_guidance():
         catalog_request_id=None,
         interaction_mode="headless",
         response_mode="fdabench_choice",
+        visualization_mode="none",
         gsf_catalog_call_limit=2,
         gsf_text_to_sql_call_limit=6,
+        gsf_text_to_pql_call_limit=2,
         python_call_limit=8,
         current_datetime="2026-08-19T12:00:00-03:00",
     )
@@ -419,8 +494,10 @@ def test_prompt_renders_preloaded_router_catalog_context_only_when_supplied():
         "user_info": None,
         "interaction_mode": "headless",
         "response_mode": "standard",
+        "visualization_mode": "none",
         "gsf_catalog_call_limit": 2,
         "gsf_text_to_sql_call_limit": 6,
+        "gsf_text_to_pql_call_limit": 2,
         "python_call_limit": None,
         "current_datetime": "2026-08-20T12:00:00-03:00",
     }

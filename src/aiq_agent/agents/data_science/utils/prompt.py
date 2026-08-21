@@ -19,6 +19,7 @@ from aiq_agent.common import render_prompt_template
 from ..models import DataScienceAgentContext
 from ..models import InteractionMode
 from ..models import ResponseMode
+from ..models import VisualizationMode
 
 
 def build_prompt_middleware(
@@ -27,8 +28,10 @@ def build_prompt_middleware(
     *,
     interaction_mode: InteractionMode = "interactive",
     response_mode: ResponseMode = "standard",
+    visualization_mode: VisualizationMode = "none",
     gsf_catalog_call_limit: int | None = None,
     gsf_text_to_sql_call_limit: int | None = None,
+    gsf_text_to_pql_call_limit: int | None = None,
     python_call_limit: int | None = None,
 ) -> AgentMiddleware:
     """Render the data-science prompt with the request's exact tool surface."""
@@ -50,8 +53,10 @@ def build_prompt_middleware(
             catalog_request_id=catalog_request_id,
             interaction_mode=interaction_mode,
             response_mode=response_mode,
+            visualization_mode=visualization_mode,
             gsf_catalog_call_limit=gsf_catalog_call_limit,
             gsf_text_to_sql_call_limit=gsf_text_to_sql_call_limit,
+            gsf_text_to_pql_call_limit=gsf_text_to_pql_call_limit,
             python_call_limit=python_call_limit,
             current_datetime=datetime.now().astimezone().isoformat(timespec="seconds"),
         )

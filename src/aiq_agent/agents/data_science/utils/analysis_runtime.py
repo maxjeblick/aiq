@@ -68,7 +68,7 @@ def get_analysis_run() -> AnalysisRunState | None:
 
 
 def register_gsf_result(*, question: str, database_name: str | None, payload: dict[str, Any]) -> str | None:
-    """Persist one successful GSF SQL response and return its stable request-local reference."""
+    """Persist one successful tabular GSF response and return its stable request-local reference."""
 
     state = get_analysis_run()
     if state is None or payload.get("status") == "error" or not isinstance(payload.get("rows"), list):
