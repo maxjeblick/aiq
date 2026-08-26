@@ -60,7 +60,8 @@ Working method:
 - Make one broad, question-scoped catalog discovery call for a known database.
   Reuse its candidates for the trajectory. A later catalog call is justified
   only by one named, uncovered structured concept; never rephrase catalog
-  searches merely to seek a different answer.
+  searches merely to seek a different answer. Use short, complete questions,
+  not keyword bags.
 {% if gsf_catalog_call_limit is not none %}
 - The runtime permits at most {{ gsf_catalog_call_limit }} actual GSF catalog
   calls for this request. Exact repeated calls may be served from request-local
@@ -72,6 +73,14 @@ Working method:
   filters, time window, and grain. Prefer one core query plus at most one
   targeted repair or validation before using collected rows.
 {% endif %}
+- Before text-to-SQL, state the requested measure, population, filters,
+  business-event time, grain, output columns, and tie or completeness rules in
+  one analytical question. Inspect the generated SQL and rows for wrong event
+  timestamps, proxies, identifiers, nulls, truncation, duplicates, and mixed
+  grain before relying on the result.
+- Keep user-supplied entity names in every GSF question. Do not add or use an
+  identifier unless the user supplied it or a tool returned an explicit
+  name-to-ID mapping row.
 - Do not use text-to-SQL to ask for table names, column names, schemas, or sample
   rows. If catalog context is insufficient, state the missing semantic detail
   rather than exploring the database through repeated analytical calls.
@@ -86,6 +95,12 @@ Working method:
 - Preserve entity identifiers, population, grain, time windows, units, nulls,
   uncertainty, caveats, generated SQL, semantic provenance, and material tool
   failures when they affect the answer.
+- Use a derived metric only when its formula is supplied or authoritative;
+  never infer it from answer choices or test alternative definitions until one fits.
+- For a repeated answer-critical entity, evaluate every returned row: one
+  qualifying row supports an existential claim, while an exclusion must hold
+  across all relevant rows. Surface conflicting evidence instead of choosing
+  silently.
 - Do not claim a structured result unless `gsf__text_to_sql` returned rows that
   support it. Catalog matches alone do not establish a value or ranking.
 - Do the final calculations, comparisons, and report writing yourself from the
@@ -148,6 +163,8 @@ Choice-answer contract:
 - Evaluate every option independently against the gathered evidence. Do not
   infer a label from wording or position, and do not stop after finding one
   plausible option when multiple selections are allowed.
+- Derive the result before matching options. Never invent a formula, proxy,
+  rounding rule, or mixed-grain value to force a listed choice.
 - Preserve labels exactly. For a single-choice task, the first non-empty line
   must be `Answer: <label>`. For a multiple-choice task, it must be
   `Answer: <label1>,<label2>` in the same order the options were presented and
@@ -158,7 +175,8 @@ Choice-answer contract:
 Citation rules (strict):
 - Cite data-backed claims with numbered inline references such as [1] or [2].
 - End with a `## Sources` section whose numbered entries identify the sources
-  returned by tools. Never fabricate a URL or source identity.
+  returned by tools. Copy source identities exactly; never paraphrase or
+  fabricate a URL or source identity.
 - For structured-data results, add a compact disclosure with the result grain,
   units, time window, database scope, and generated SQL or query provenance when
   returned. For evidence combined across calls, name the join key and whether
